@@ -1,6 +1,6 @@
 --!strict
 -- GuardClause.lua 
--- Validação Recursiva, Verificação de Instâncias, Enums e Sanitização de Dados.
+-- Sistema de blindagem: validação recursiva, tipos, instâncias e sanitização.
 
 local GuardClause = {}
 
@@ -8,11 +8,12 @@ local _logger: any = nil
 local _typeof = typeof
 local _format = string.format
 
--- [Configuração]
+-- Conecta o logger para que as falhas de segurança apareçam no console central
 function GuardClause.ConnectReporter(reporterInstance: any)
 	_logger = reporterInstance
 end
 
+-- Centraliza como o erro é cuspido (seja via logger ou erro fatal)
 local function report(msg: string, critical: boolean)
 	if _logger then
 		_logger:SendMessage("GuardClause", msg, critical and "Error" or "Warn")
@@ -23,14 +24,13 @@ local function report(msg: string, critical: boolean)
 	end
 end
 
--- [[ MÉTODOS DE VALIDAÇÃO ]] --
+-- [[ REGRAS DE VALIDAÇÃO ]] --
 
--- 1. Validação de Tipos Básicos (com suporte a múltiplos tipos)
--- Ex: Guard:Is(val, "string|number")
+-- Checa se o tipo bate. Aceita múltiplos tipos usando pipe, ex: "string|number"
 function GuardClause:Is(value: any, expected: string, critical: boolean?): boolean
 	local actual = _typeof(value)
 	
-	-- Suporta verificação de múltiplos tipos separados por |
+	-- Se tiver um "|", quebra a string e testa cada tipo permitido
 	if expected:find("|") then
 		for t in expected:gmatch("[^|]+") do
 			if actual == t then return true end
@@ -39,54 +39,52 @@ function GuardClause:Is(value: any, expected: string, critical: boolean?): boole
 		return true
 	end
 
-	report(_format("Tipo inválido. Esperado: %s, Recebeu: %s", expected, actual), critical or false)
+	report(_format("Tipo errado. O código pedia %s, mas chegou %s", expected, actual), critical or false)
 	return false
 end
 
--- 2. Validação de Instâncias do Roblox com suporte a ClassName
+-- Verifica se pertence à classe certa (IsA)
 function GuardClause:IsInstance(value: any, className: string, critical: boolean?): boolean
 	if _typeof(value) ~= "Instance" then
-		report(_format("Esperada Instance (%s), recebeu %s", className, _typeof(value)), critical or false)
+		report(_format("Esperava uma Instance (%s), mas recebi %s", className, _typeof(value)), critical or false)
 		return false
 	end
 	
 	if not value:IsA(className) then
-		report(_format("Instance de classe errada. Esperado: %s, Recebeu: %s", className, value.ClassName), critical or false)
+		report(_format("Classe inválida. Esperado: %s, Real: %s", className, value.ClassName), critical or false)
 		return false
 	end
 	return true
 end
 
--- 3. Validação de Números com Clamping (Range)
+-- Trava o valor entre um mínimo e um máximo 
 function GuardClause:Number(value: any, min: number?, max: number?, critical: boolean?): boolean
 	if _typeof(value) ~= "number" then
-		report("O valor não é um número.", critical or false)
+		report("Valor não é numérico.", critical or false)
 		return false
 	end
 	
 	if (min and value < min) or (max and value > max) then
-		report(_format("Número %f fora do intervalo permitido [%s, %s]", value, tostring(min), tostring(max)), critical or false)
+		report(_format("Número %f fora do limite permitido [%s, %s]", value, tostring(min), tostring(max)), critical or false)
 		return false
 	end
 	return true
 end
 
--- 4. Validação de Enums (Verifica se o valor está em uma lista)
--- Ex: Guard:InList("Fire", {"Fire", "Ice", "Wind"})
+-- Garante que o valor está dentro de uma "whitelist" pré-definida
 function GuardClause:InList(value: any, list: {any}, critical: boolean?): boolean
 	for _, v in ipairs(list) do
 		if v == value then return true end
 	end
-	report(_format("Valor '%s' não é uma opção válida na lista permitida.", tostring(value)), critical or false)
+	report(_format("O valor '%s' não consta na lista de opções permitidas.", tostring(value)), critical or false)
 	return false
 end
 
--- 5. SCHEMA RECURSIVO (O Coração do Sistema)
--- Suporta: tabelas dentro de tabelas e tipos opcionais (prefixados com ?)
--- Ex blueprint: { Name = "string", Stats = { Level = "number" }, Optional = "?string" }
+-- Valida tabelas complexas (Blueprints). 
+-- Aceita campos opcionais com "?" e faz varredura profunda (recursiva).
 function GuardClause:Schema(targetTable: any, blueprint: {[string]: any}, critical: boolean?): boolean
 	if _typeof(targetTable) ~= "table" then
-		report("O alvo do Schema não é uma tabela.", critical or false)
+		report("Tentativa de rodar Schema em algo que não é tabela.", critical or false)
 		return false
 	end
 
@@ -94,26 +92,27 @@ function GuardClause:Schema(targetTable: any, blueprint: {[string]: any}, critic
 		local value = targetTable[key]
 		local actualType = _typeof(value)
 		
-		-- Caso o campo seja opcional (ex: "?string")
+		-- Lógica para campos opcionais (ex: "?string")
 		local isOptional = false
 		local expectedType = expected
 		
 		if _typeof(expected) == "string" and expected:sub(1,1) == "?" then
 			isOptional = true
 			expectedType = expected:sub(2)
-			if value == nil then continue end -- Pula se for opcional e nulo
+			-- Se for nulo mas opcional, tá tudo certo, segue o baile
+			if value == nil then continue end 
 		end
 
-		-- Se o blueprint for uma tabela, valida recursivamente (Deep Check)
+		-- Se o blueprint for outra tabela, entramos nela para um "deep check"
 		if _typeof(expectedType) == "table" then
 			if not self:Schema(value, expectedType, critical) then
 				return false
 			end
 		
-		-- Se for uma string de tipo simples
+		-- Validação simples de tipo
 		elseif _typeof(expectedType) == "string" then
 			if actualType ~= expectedType then
-				report(_format("Erro no campo [%s]: Esperado %s, recebeu %s", key, expectedType, actualType), critical or false)
+				report(_format("Erro no campo [%s]: Esperava %s, chegou %s", key, expectedType, actualType), critical or false)
 				return false
 			end
 		end
@@ -122,8 +121,7 @@ function GuardClause:Schema(targetTable: any, blueprint: {[string]: any}, critic
 	return true
 end
 
--- 6. ASSERT (Fail-Fast)
--- Útil para parar o código imediatamente se algo estiver errado
+-- Para a execução na hora se a condição falhar. Use para evitar bugs em cascata.
 function GuardClause:Assert(condition: boolean, msg: string)
 	if not condition then
 		report(msg, true)
