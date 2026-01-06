@@ -4,6 +4,8 @@ Um **framework modular e seguro** para desenvolvimento no Roblox.
 
 Esse framework foi projetado para desenvolvedores que precisam de uma **arquitetura escalável, previsível e segura**, com foco em **Injeção de Dependências**, **Segurança de Memória**, **Imutabilidade de Estado** e **Middleware Anti-Exploit**.
 
+Este framework está em desenvolvimento ativo. APIs, estruturas e comportamentos podem mudar sem aviso prévio.
+
 ---
 
 ## Nossa Filosofia Central
