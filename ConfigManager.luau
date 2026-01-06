@@ -1,17 +1,16 @@
 --!strict
 -- ConfigManager.lua
--- Gerencia estado reativo, replica dados permitidos e protege a integridade da memória.
 
 local ConfigManager = {}
 ConfigManager.__index = ConfigManager
 
--- Dependências Injetadas
+-- Dependências injetadas pelo módulo principal
 local _log: any = nil
 local _guard: any = nil
 local _events: any = nil
 local _network: any = nil 
 
--- [PAINEL DE CONTROLE DE REPLICAÇÃO]
+-- Chaves que o cliente precisa conhecer (sincronização automática, coloque as chaves que você deseja serem replicadas)
 local REPLICATED_KEYS: { [string]: boolean } = {
 	["Gold"] = true,
 	["Level"] = true,
@@ -22,9 +21,7 @@ local REPLICATED_KEYS: { [string]: boolean } = {
 
 local playerConfigs: { [number]: { [string]: any } } = {}
 
--- [[ UTILITÁRIOS PRIVADOS ]] --
-
--- Protege contra modificações acidentais em tabelas (Imutabilidade)
+-- Criamos uma cópia profunda para garantir que ninguém altere a tabela original por referência
 local function deepCopy(t: any): any
 	if typeof(t) ~= "table" then return t end
 	local copy = {}
@@ -34,8 +31,7 @@ local function deepCopy(t: any): any
 	return copy
 end
 
--- [[ INICIALIZAÇÃO ]] --
-
+-- Inicializa as dependências necessárias para o funcionamento do módulo
 function ConfigManager.Init(logger: any, guard: any, eventManager: any, networkManager: any)
 	_log, _guard, _events, _network = logger, guard, eventManager, networkManager
 end
@@ -44,66 +40,69 @@ function ConfigManager.new()
 	return setmetatable({}, ConfigManager)
 end
 
--- [[ INTEGRAÇÃO DATASTORE ]] --
-
+-- Puxa os dados brutos do DataStore para o estado atual do player
 function ConfigManager:ImportPlayerData(player: Player, data: {[string]: any})
 	if not _guard:IsInstance(player, "Player") then return end
-	playerConfigs[player.UserId] = deepCopy(data) -- Importa uma cópia limpa
+	
+	-- Trabalhamos sempre com uma cópia para evitar side-effects
+	playerConfigs[player.UserId] = deepCopy(data)
 	
 	self:SyncAll(player)
 	
-	if _log then _log:SendMessage("Config", "Sessão de dados iniciada: " .. player.Name, "Print") end
+	if _log then 
+		_log:SendMessage("Config", "Sessão de dados iniciada: " .. player.Name, "Print") 
+	end
 end
 
+-- Retorna uma cópia limpa dos dados para salvamento seguro no DataStore
 function ConfigManager:ExportPlayerData(player: Player): {[string]: any}?
 	local data = playerConfigs[player.UserId]
-	return data and deepCopy(data) or nil -- Exporta uma cópia para o DataStore salvar com segurança
+	return data and deepCopy(data) or nil
 end
 
--- [[ MÉTODOS DE ESTADO (BLINDADOS) ]] --
-
+-- Altera um valor e dispara a replicação/eventos se necessário
 function ConfigManager:SetPlayer(player: Player, key: string, value: any)
 	if not _guard:IsInstance(player, "Player", true) then return end
 	
 	local userId = player.UserId
 	playerConfigs[userId] = playerConfigs[userId] or {}
 	
-	-- Garante que se o valor for uma tabela, o Config guarde uma CÓPIA interna
+	-- Se o valor for tabela, clonamos para o estado interno não ser corrompido de fora
 	local internalValue = (typeof(value) == "table") and deepCopy(value) or value
 	local oldValue = playerConfigs[userId][key]
 	
-	-- Comparação básica para evitar disparos inúteis
+	-- Só prossegue se o valor realmente mudou
 	if oldValue == internalValue then return end
 	playerConfigs[userId][key] = internalValue
 	
-	-- 1. REPLICAÇÃO AUTOMÁTICA (Server -> Client)
+	-- Notifica o cliente se a chave estiver na lista de replicação
 	if REPLICATED_KEYS[key] and _network then
 		_network:FireClient("ConfigSync", player, {Key = key, Value = internalValue})
 	end
 	
-	-- 2. EVENTOS INTERNOS (Server -> Server)
+	-- Avisa o restante do servidor sobre a mudança
 	if _events then
 		_events:Fire("PlayerConfigChanged", player, key, internalValue, oldValue)
 		_events:Fire(`Update_{userId}`, key, internalValue)
 	end
 end
 
--- RETORNO PROTEGIDO: O resto do jogo recebe uma cópia, nunca a tabela original
+-- Sempre retorna uma cópia para o resto do script não "sujar" o dado original
 function ConfigManager:GetPlayer(player: Player, key: string): any
 	local data = playerConfigs[player.UserId] and playerConfigs[player.UserId][key]
 	return deepCopy(data)
 end
 
+-- Facilita a atualização de um campo específico dentro de uma tabela aninhada
 function ConfigManager:SetInTable(player: Player, tableKey: string, subKey: string, value: any)
-	local data = self:GetPlayer(player, tableKey) -- Isso já retorna uma cópia via GetPlayer
+	local data = self:GetPlayer(player, tableKey)
 	if typeof(data) ~= "table" then data = {} end
 	
 	data[subKey] = value
-	self:SetPlayer(player, tableKey, data) -- Atualiza e replica a tabela inteira
+	self:SetPlayer(player, tableKey, data)
 end
 
--- [[ GERENCIAMENTO DE SESSÃO ]] --
-
+-- Manda todos os dados relevantes de uma vez para o client (usado no spawn)
 function ConfigManager:SyncAll(player: Player)
 	if not _network then return end
 	local data = playerConfigs[player.UserId]
@@ -118,6 +117,7 @@ function ConfigManager:SyncAll(player: Player)
 	_network:FireClient("ConfigSyncAll", player, toSync)
 end
 
+-- Limpa o cache quando o jogador sai do servidor
 function ConfigManager:ClearPlayer(player: Player)
 	playerConfigs[player.UserId] = nil
 end
