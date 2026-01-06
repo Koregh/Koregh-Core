@@ -1,144 +1,110 @@
 --!strict
 -- NetworkManager.lua
--- Gerenciamento de rede ultra-seguro, escalável e com gerenciamento automático de estado.
+-- Gerenciamento de rede blindado com execução segura, rate limiting dinâmico e logging.
 
 local NetworkManager = {}
 NetworkManager.__index = NetworkManager
 
 -- Dependências Injetadas
-local _logger: any = nil
+local _log: any = nil
 local _guard: any = nil
 
--- Configurações de Performance/Segurança
-local RATE_LIMIT_MS = 100 
-local playerThrottling: {[number]: {[string]: number}} = {}
+-- Configurações Padrão
+local DEFAULT_RATE_LIMIT = 0.1 -- 100ms
+local playerThrottling = {} -- { [UserId]: { [eventName]: lastTime } }
 
 -- Tipos
 export type NetworkManagerType = typeof(setmetatable({} :: {
-	_events: { [string]: RemoteEvent | RemoteFunction },
-	_connections: { [string]: { RBXScriptConnection } },
-	_middlewares: { (Player, any) -> boolean }
+	_events: { [string]: RemoteEvent },
+	_connections: { [string]: { RBXScriptConnection } }
 }, NetworkManager))
 
--- Inicialização com Injeção de Dependência
 function NetworkManager.Init(logger: any, guard: any)
-	_logger = logger
+	_log = logger
 	_guard = guard
-	
-	-- Lifecycle: Limpa cache de throttling quando o player sai para evitar Memory Leak
-	game:GetService("Players").PlayerRemoving:Connect(function(player)
-		playerThrottling[player.UserId] = nil
-	end)
-end
-
-local function report(msg: string, msgType: "Warn" | "Error")
-	if _logger then _logger:SendMessage("Network", msg, msgType) end
 end
 
 function NetworkManager.new(): NetworkManagerType
 	return setmetatable({
 		_events = {},
-		_connections = {},
-		_middlewares = {} -- Permite adicionar verificações globais (ex: BanCheck)
+		_connections = {}
 	}, NetworkManager) :: any
 end
 
--- [[ GERENCIAMENTO DE INSTÂNCIAS ]] --
+-- [[ MÉTODOS PRIVADOS ]] --
 
-function NetworkManager:GetEvent(name: string, isFunction: boolean?): RemoteEvent | RemoteFunction
+function NetworkManager:_getEvent(name: string): RemoteEvent
 	if self._events[name] then return self._events[name] end
 	
 	local storage = game:GetService("ReplicatedStorage")
 	local remoteFolder = storage:FindFirstChild("Remotes") or Instance.new("Folder", storage)
 	remoteFolder.Name = "Remotes"
 	
-	local className = isFunction and "RemoteFunction" or "RemoteEvent"
-	local remote = remoteFolder:FindFirstChild(name) or Instance.new(className, remoteFolder)
+	local remote = remoteFolder:FindFirstChild(name) or Instance.new("RemoteEvent", remoteFolder)
 	remote.Name = name
 	
-	self._events[name] = remote :: any
+	self._events[name] = remote :: RemoteEvent
 	self._connections[name] = {}
-	return self._events[name]
+	return remote
 end
 
--- [[ MIDDLEWARE SYSTEM ]] --
+-- [[ MÉTODOS PÚBLICOS ]] --
 
--- Permite adicionar uma função que roda antes de TODOS os eventos
--- Útil para: Verificar se o player está atordoado, se está banido, etc.
-function NetworkManager:AddGlobalMiddleware(fn: (Player, any) -> boolean)
-	table.insert(self._middlewares, fn)
-end
+-- @desc Conexão com Proteção de Thread, Validação e Cooldown customizável
+function NetworkManager:Connect(name: string, blueprint: {[string]: any}?, callback: (Player, any) -> (), customCooldown: number?)
+	local event = self:_getEvent(name)
+	local cooldownTime = customCooldown or DEFAULT_RATE_LIMIT
 
--- [[ CONEXÕES BLINDADAS ]] --
-
-function NetworkManager:Connect(name: string, blueprint: {[string]: any}?, callback: (Player, any) -> ())
-	local event = self:GetEvent(name) :: RemoteEvent
-	
 	local connection = event.OnServerEvent:Connect(function(player: Player, data: any)
-		-- 1. PROTEÇÃO: Rate Limiting
+		-- 1. PROTEÇÃO: Rate Limiting Dinâmico
 		local now = os.clock()
 		local pId = player.UserId
 		playerThrottling[pId] = playerThrottling[pId] or {}
 		
-		if playerThrottling[pId][name] and (now - playerThrottling[pId][name]) < (RATE_LIMIT_MS / 1000) then
-			report("Rate limit atingido por: " .. player.Name .. " no evento: " .. name, "Warn")
+		if playerThrottling[pId][name] and (now - playerThrottling[pId][name]) < cooldownTime then
+			if _log then _log:SendMessage("Network", `Spam detectado: {player.Name} em {name}`, "Warn") end
 			return
 		end
 		playerThrottling[pId][name] = now
 
-		-- 2. PROTEÇÃO: Middlewares Globais
-		for _, middleware in ipairs(self._middlewares) do
-			if not middleware(player, data) then return end
-		end
-
-		-- 3. PROTEÇÃO: GuardClause Schema (Agora aceita Deep Schema da V3)
+		-- 2. PROTEÇÃO: Validação de Schema (GuardClause)
 		if blueprint and _guard then
 			if not _guard:Schema(data, blueprint) then
-				report("Dados maliciosos/inválidos de: " .. player.Name, "Error")
+				if _log then _log:SendMessage("Network", `Dados maliciosos/inválidos de {player.Name} no evento {name}`, "Error") end
 				return 
 			end
 		end
 
-		-- 4. EXECUÇÃO SEGURA
-		task.spawn(callback, player, data)
+		-- 3. EXECUÇÃO BLINDADA (State of the Art)
+		-- Usamos task.spawn com pcall para que um erro no seu código não quebre o NetworkManager
+		task.spawn(function()
+			local success, err = pcall(callback, player, data)
+			if not success and _log then
+				_log:SendMessage("NetworkError", `Erro crítico no evento [{name}] disparado por {player.Name}: {err}`, "Error")
+			end
+		end)
 	end)
 
 	table.insert(self._connections[name], connection)
 end
 
--- [[ INVOKE (REMOTE FUNCTIONS) ]] --
-
-function NetworkManager:HandleInvoke(name: string, blueprint: {[string]: any}?, callback: (Player, any) -> any)
-	local remoteFunc = self:GetEvent(name, true) :: RemoteFunction
-	
-	remoteFunc.OnServerInvoke = function(player: Player, data: any)
-		-- Aplica as mesmas proteções do Connect
-		if blueprint and _guard then
-			if not _guard:Schema(data, blueprint) then return nil end
-		end
-		
-		return callback(player, data)
-	end
-end
-
--- [[ ENVIO DE SINAIS ]] --
-
+-- @desc Envia dados para um cliente específico
 function NetworkManager:FireClient(name: string, player: Player, ...: any)
-	local event = self:GetEvent(name) :: RemoteEvent
+	local event = self:_getEvent(name)
 	event:FireClient(player, ...)
 end
 
+-- @desc Envia dados para todos os clientes
 function NetworkManager:FireAllClients(name: string, ...: any)
-	local event = self:GetEvent(name) :: RemoteEvent
+	local event = self:_getEvent(name)
 	event:FireAllClients(...)
 end
 
--- [[ CLEANUP ]] --
-
-function NetworkManager:DisconnectEvent(name: string)
+-- @desc Limpa todas as conexões de um evento específico
+function NetworkManager:Disconnect(name: string)
 	if self._connections[name] then
-		for _, conn in ipairs(self._connections[name]) do
-			conn:Disconnect()
+		for _, connection in ipairs(self._connections[name]) do
+			connection:Disconnect()
 		end
 		self._connections[name] = {}
 	end
