@@ -16,7 +16,7 @@ export type Entry = {
 -- Configurações e Estado
 local activeEntries: { [number]: Entry } = {} -- Dicionário para busca O(1)
 local idCounter = 0
-local _logger = nil :: any?
+local _logger = nil :: any? -- Coloque a referência do local do logger
 
 -- Injeção de dependência (Seguindo o padrão do GuardClause)
 function MemoryManager.ConnectReporter(reporterInstance: any)
