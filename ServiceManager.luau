@@ -1,34 +1,35 @@
 --!strict
 -- ServiceManager.lua
--- Gerencia o ciclo de vida dos serviços com isolamento de erros.
+
 
 local ServiceManager = {}
 local _services: { [string]: any } = {}
 
 -- [[ MÉTODOS PÚBLICOS ]] --
 
--- @desc Carrega os módulos e os armazena na memória interna
+-- Varre a pasta de serviços e coloca todo mundo na memória (Lazy Loading)
 function ServiceManager.Load(servicesFolder: Folder)
 	for _, module in ipairs(servicesFolder:GetChildren()) do
 		if module:IsA("ModuleScript") then
+			-- O pcall aqui evita que um erro de sintaxe em um script derrube o carregamento dos outros
 			local success, service = pcall(require, module)
 			if success then
 				_services[module.Name] = service
 			else
-				warn(`[ServiceManager] Erro Crítico de Require em {module.Name}: {service}`)
+				warn(`[ServiceManager] Falha crítica ao dar require em {module.Name}: {service}`)
 			end
 		end
 	end
 end
 
--- @desc Configura dependências (Roda sequencialmente, mas protegido)
+-- Prepara as dependências. É aqui que os serviços recebem o Framework e se configuram.
 function ServiceManager.InitAll(framework: any)
 	for name, service in pairs(_services) do
 		if type(service.Init) == "function" then
-			-- O pcall aqui garante que um serviço quebrado não pare o Framework
+			-- Blindagem: se um serviço quebrar no Init, o restante do jogo ainda tenta subir
 			local success, err = pcall(service.Init, framework)
 			if not success then
-				-- Se o framework tiver log, usamos ele, senão usamos warn
+				-- Tenta usar o logger central, mas tem um fallback caso ele ainda não esteja pronto
 				if framework.Log then
 					framework.Log:SendMessage("Critical", `Erro no Init do serviço {name}: {err}`, "Error")
 				else
@@ -39,11 +40,12 @@ function ServiceManager.InitAll(framework: any)
 	end
 end
 
--- @desc Inicia a lógica ativa (Roda em threads separadas e protegidas)
+-- Roda a lógica ativa (loops, conexões de eventos, etc.)
 function ServiceManager.StartAll()
 	for name, service in pairs(_services) do
 		if type(service.Start) == "function" then
-			-- Usamos task.spawn para cada serviço ter sua própria 'linha de vida'
+			-- Cada serviço ganha sua própria thread (task.spawn).
+			-- Assim, um loop infinito no Serviço A não trava o Serviço B.
 			task.spawn(function()
 				local success, err = pcall(service.Start)
 				if not success then
