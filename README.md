@@ -1,32 +1,32 @@
-# ELF — Elite Luau Framework
+# KCF — Koregh Core Framework
 
-Um **framework de alto desempenho, modular e seguro** para desenvolvimento profissional no Roblox.
+Um **framework modular e seguro** para desenvolvimento no Roblox.
 
-O **ELF (Elite Luau Framework)** foi projetado para desenvolvedores que precisam de uma **arquitetura escalável, previsível e segura**, com foco em **Injeção de Dependências**, **Segurança de Memória**, **Imutabilidade de Estado** e **Middleware Anti-Exploit**.
+Esse framework foi projetado para desenvolvedores que precisam de uma **arquitetura escalável, previsível e segura**, com foco em **Injeção de Dependências**, **Segurança de Memória**, **Imutabilidade de Estado** e **Middleware Anti-Exploit**.
 
 ---
 
-## 🚀 Filosofia Central
+## Nossa Filosofia Central
 
-- 🧩 **Arquitetura Modular**  
+- **Arquitetura Modular**  
   Toda a lógica é desacoplada em *Services*, coordenados por um **Kernel central**.
 
-- 🛡️ **Segurança em Primeiro Lugar**  
+- **Segurança em Primeiro Lugar**  
   Validação nativa de dados (schemas) e *rate limit* em toda comunicação de rede.
 
-- 🔄 **Estado Reativo e Imutável**  
+- **Estado Reativo e Imutável**  
   Gerenciamento de dados com replicação automática para o cliente e proteção contra mutações acidentais.
 
-- 🧹 **Eficiência de Memória**  
+- **Eficiência de Memória**  
   Gerenciamento rigoroso de ciclo de vida utilizando o padrão **Janitor**, prevenindo memory leaks.
 
 ---
 
-## 📂 Estrutura do Projeto
+## Estrutura do Projeto
 
 ```text
 Framework/
-├── Services/           # Lógica do jogo (EconomyService, QuestService, etc)
+├── Services/           # Lógica do jogo (Ex: EconomyService, QuestService, etc)
 ├── ServiceManager      # Orquestra carregamento e ciclo de vida
 ├── NetworkManager      # Camada de comunicação segura
 ├── ConfigManager       # Estado imutável e replicação
@@ -38,7 +38,7 @@ Framework/
 
 ---
 
-## 🛠️ Referência da API
+## Referência da API
 
 ### 1. Núcleo do Framework (`Framework.lua`)
 
@@ -102,7 +102,7 @@ Implementação pura do padrão **Observer** em Luau, mais rápida que `Bindable
 
 ---
 
-## 🧪 Exemplo de Implementação de Serviço
+## Exemplo de Implementação de Serviço
 
 Crie um `ModuleScript` dentro da pasta `Services`:
 
@@ -130,18 +130,10 @@ return MyService
 
 ---
 
-## 📜 Licença
+## Licença
 
 Este projeto é distribuído sob a **Licença MIT**.
 
----
+## Data e versão 
 
-## 📎 Próximos Passos
-
-- Criar `DATA_STRUCTURE.md` documentando os schemas do `ConfigManager`
-- Adicionar um `.gitignore` padrão para projetos Roblox
-- Documentação avançada de segurança e anti-exploit
-
----
-
-**ELF — arquitetura de nível profissional para jogos Roblox escaláveis.**
+Última atualização em 06/01/2026 as 13:00, versão atual 1.0.
