@@ -1,17 +1,15 @@
 --!strict
 -- ServiceManager.lua
 
-
 local ServiceManager = {}
 local _services: { [string]: any } = {}
 
 -- [[ MÉTODOS PÚBLICOS ]] --
 
--- Varre a pasta de serviços e coloca todo mundo na memória (Lazy Loading)
+-- Varre a pasta de serviços e coloca todo mundo na memória
 function ServiceManager.Load(servicesFolder: Folder)
 	for _, module in ipairs(servicesFolder:GetChildren()) do
 		if module:IsA("ModuleScript") then
-			-- O pcall aqui evita que um erro de sintaxe em um script derrube o carregamento dos outros
 			local success, service = pcall(require, module)
 			if success then
 				_services[module.Name] = service
@@ -22,18 +20,27 @@ function ServiceManager.Load(servicesFolder: Folder)
 	end
 end
 
--- Prepara as dependências. É aqui que os serviços recebem o Framework e se configuram.
+-- Prepara as dependências e mede o tempo de resposta (Telemetria)
 function ServiceManager.InitAll(framework: any)
 	for name, service in pairs(_services) do
 		if type(service.Init) == "function" then
-			-- Blindagem: se um serviço quebrar no Init, o restante do jogo ainda tenta subir
+			-- [TELEMETRIA] Começamos a contar o tempo aqui
+			local startTime = os.clock()
+			
 			local success, err = pcall(service.Init, framework)
+			
+			local duration = os.clock() - startTime
+			
 			if not success then
-				-- Tenta usar o logger central, mas tem um fallback caso ele ainda não esteja pronto
 				if framework.Log then
 					framework.Log:SendMessage("Critical", `Erro no Init do serviço {name}: {err}`, "Error")
 				else
 					warn(`[ServiceManager] Erro no Init de {name}: {err}`)
+				end
+			else
+				-- Log de performance: se demorar mais que 0.1s, avisa que está lento
+				if duration > 0.1 and framework.Log then
+					framework.Log:SendMessage("Warning", `Serviço {name} demorou {string.format("%.4f", duration)}s para iniciar!`, "Warn")
 				end
 			end
 		end
@@ -44,8 +51,6 @@ end
 function ServiceManager.StartAll()
 	for name, service in pairs(_services) do
 		if type(service.Start) == "function" then
-			-- Cada serviço ganha sua própria thread (task.spawn).
-			-- Assim, um loop infinito no Serviço A não trava o Serviço B.
 			task.spawn(function()
 				local success, err = pcall(service.Start)
 				if not success then
@@ -54,6 +59,17 @@ function ServiceManager.StartAll()
 			end)
 		end
 	end
+end
+
+-- [O NOVO]: Permite que um serviço encontre o outro com segurança
+-- Ex: local Economy = ServiceManager.Get("EconomyService")
+function ServiceManager.Get(name: string): any
+	local service = _services[name]
+	if not service then
+		warn(`[ServiceManager] Tentativa de acessar serviço inexistente: {name}`)
+		return nil
+	end
+	return service
 end
 
 return ServiceManager
