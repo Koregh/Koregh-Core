@@ -1,6 +1,6 @@
---!strict
+-- !strict
 -- GuardClause.lua 
--- Sistema de blindagem: validação recursiva, tipos, instâncias e sanitização.
+
 
 local GuardClause = {}
 
