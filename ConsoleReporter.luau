@@ -1,6 +1,6 @@
 --!strict
 -- ConsoleReporter.luau
--- Logger de alta performance com gerenciamento de memória e rastreio de stack.
+-- Logger com gerenciamento de memória e rastreio de stack.
 
 local ConsoleReporter = {}
 ConsoleReporter.__index = ConsoleReporter
