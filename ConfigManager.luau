@@ -82,7 +82,7 @@ function ConfigManager:SetPlayer(player: Player, key: string, value: any)
 	end
 end
 
--- [OTIMIZADO] Atualiza apenas um campo dentro de uma tabela sem reenviar a tabela toda
+-- Atualiza apenas um campo dentro de uma tabela sem reenviar a tabela toda
 function ConfigManager:UpdateInTable(player: Player, tableKey: string, subKey: string, value: any)
 	local userId = player.UserId
 	if not playerConfigs[userId] or typeof(playerConfigs[userId][tableKey]) ~= "table" then
