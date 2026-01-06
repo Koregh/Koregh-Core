@@ -1,6 +1,6 @@
 --!strict
 -- Janitor.lua
--- Gerencia o ciclo de vida de objetos e conexões, prevenindo vazamentos de memória.
+
 
 local Janitor = {}
 Janitor.__index = Janitor
@@ -21,12 +21,12 @@ function Janitor.new(): Janitor
 	}, Janitor) :: any
 end
 
--- @desc Adiciona um objeto para ser limpo. 
--- @param methodName Se o objeto não tiver ".Destroy", você diz qual método usar (ex: "Disconnect")
+-- Coloca um objeto na lista de limpeza. 
+-- Se passar um 'index', ele substitui o que estiver lá (útil para sobrescrever conexões).
 function Janitor:Add(object: Task, methodName: string?, index: any?): Task
 	local taskIndex = index or object
 	
-	-- Se já existe algo nesse índice, limpa o antigo antes
+	-- Se o índice já estiver ocupado, mata a tarefa antiga primeiro
 	if index and self._tasks[index] then
 		self:Remove(index)
 	end
@@ -39,7 +39,7 @@ function Janitor:Add(object: Task, methodName: string?, index: any?): Task
 	return object
 end
 
--- @desc Remove e limpa um objeto específico pelo índice
+-- Mata uma tarefa específica e tira da lista
 function Janitor:Remove(index: any)
 	local task = self._tasks[index]
 	if not task then return end
@@ -47,6 +47,7 @@ function Janitor:Remove(index: any)
 	local object = task.Object
 	local method = task.Method
 
+	-- Decide o melhor jeito de "matar" o objeto
 	if method then
 		object[method](object)
 	elseif typeof(object) == "function" then
@@ -60,17 +61,18 @@ function Janitor:Remove(index: any)
 	self._tasks[index] = nil
 end
 
--- @desc Limpa TUDO o que foi registrado
+-- Executa o cleanup de tudo o que foi registrado até agora
 function Janitor:Cleanup()
 	for index, _ in pairs(self._tasks) do
 		self:Remove(index)
 	end
 end
 
--- @desc Destrói o Janitor e tudo dentro dele
-function Framework:Destroy()
+-- Destrói o Janitor por completo
+function Janitor:Destroy()
 	self:Cleanup()
 	setmetatable(self, nil)
 end
 
 return Janitor
+
