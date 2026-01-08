@@ -133,7 +133,7 @@ function NetworkManager:Connect(
 	local cooldownTime = customCooldown or DEFAULT_RATE_LIMIT
 
 	local connection = event.OnServerEvent:Connect(function(player: Player, rawData: any)
-		-- 1. CAMADA DE REDE: Anti-Spam (Rate Limiting)
+		--Anti-Spam (Rate Limiting)
 		local now = os.clock()
 		local pId = player.UserId
 		playerThrottling[pId] = playerThrottling[pId] or {}
