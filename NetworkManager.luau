@@ -39,8 +39,6 @@ function NetworkManager.new(): NetworkManagerType
 	}, NetworkManager) :: any
 end
 
--- MÉTODOS PRIVADOS--
-
 -- Serializa dados para envio (Otimização Binária)
 local function _serialize(data: any): any
 	local t = typeof(data)
@@ -117,8 +115,6 @@ function NetworkManager:_getEvent(name: string): RemoteEvent
 	self._connections[name] = {}
 	return remote
 end
-
---  MÉTODOS PÚBLICOS --
 
 -- Conecta a um evento com tripla proteção.
 -- @param validator: (Opcional) Função que recebe (player, data) e retorna (boolean, string_erro)
